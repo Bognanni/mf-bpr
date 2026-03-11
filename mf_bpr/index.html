@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rust RecSys Dashboard</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f4f4f9; display: flex; justify-content: center; padding: 50px; }
+        .container { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 400px; }
+        h2 { text-align: center; color: #333; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 20px; }
+        input { flex: 1; padding: 10px; border: 1px solid #ddd; border-radius: 6px; }
+        button { padding: 10px 20px; background-color: #e63946; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        button:hover { background-color: #d62828; }
+        
+        ul { list-style: none; padding: 0; }
+        li { background: #fff; border-bottom: 1px solid #eee; padding: 12px; display: flex; justify-content: space-between; align-items: center; }
+        li:last-child { border-bottom: none; }
+        .rank { font-weight: bold; color: #e63946; margin-right: 10px; width: 25px; }
+        .score { font-size: 0.85em; color: #666; background: #eee; padding: 2px 6px; border-radius: 4px; }
+        .stats { text-align: center; font-size: 0.8em; color: #888; margin-top: 20px; }
+        .error { color: red; text-align: center; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Movie Recommender</h2>
+    
+    <div class="input-group">
+        <input type="number" id="userId" placeholder="User ID (es. 1)" value="1">
+        <button onclick="getRecommendations()">Search</button>
+    </div>
+
+    <p id="errorMsg" class="error">User not found or server error!</p>
+    <ul id="movieList">
+        </ul>
+    <div class="stats" id="stats"></div>
+</div>
+
+<script>
+    async function getRecommendations() {
+        const userId = document.getElementById('userId').value;
+        const list = document.getElementById('movieList');
+        const stats = document.getElementById('stats');
+        const errorMsg = document.getElementById('errorMsg');
+
+        list.innerHTML = '<li style="justify-content:center;">Loading...</li>';
+        stats.innerText = '';
+        errorMsg.style.display = 'none';
+
+        try {
+            // Call to the server
+            const response = await fetch(`http://localhost:3000/recommend/${userId}`);
+            
+            if (!response.ok) throw new Error("Error");
+
+            const data = await response.json();
+
+            list.innerHTML = '';
+
+            // Create the recommendation list
+            data.recommendations.forEach(movie => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <div style="display:flex; align-items:center;">
+                        <span class="rank">#${movie.rank}</span>
+                        <span>${movie.title}</span>
+                    </div>
+                    <span class="score">${movie.score.toFixed(3)}</span>
+                `;
+                list.appendChild(li);
+            });
+
+            stats.innerText = `Inference completed in ${data.inference_time_ms.toFixed(2)} ms`;
+
+        } catch (err) {
+            list.innerHTML = '';
+            errorMsg.style.display = 'block';
+            console.error(err);
+        }
+    }
+</script>
+
+</body>
+</html>

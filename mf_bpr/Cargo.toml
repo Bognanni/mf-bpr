@@ -1,0 +1,23 @@
+[package]
+name = "mf_bpr"
+version = "0.1.0"
+edition = "2024"
+default-run = "mf_bpr"
+
+[dependencies]
+candle-core = { version = "0.8.2", features = ["cuda"] }
+candle-nn = "0.8.2"
+anyhow = "1.0"
+rand = { version = "0.8", features = ["small_rng"] }
+csv = "1.3"
+serde = { version = "1.0", features = ["derive"] }
+ort = { version = "2.0.0-rc.11", features = ["ndarray"] }
+ndarray = "0.15"
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json"] }
+futures = "0.3"
+async-channel = "2.1" # Aggiungi questa
+num_cpus = "1.0"
+tower-http = { version = "0.5", features = ["cors"] }

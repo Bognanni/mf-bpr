@@ -1,0 +1,27 @@
+.idea/
+.DS_Store
+Thumbs.db
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Rust
+target/
+**/*.rs.bk
+
+# Datasets
+ml-1m/
+ml-1m-csv/
+ml-latest-small/
+
+# Generated models
+*.onnx
+*.onnx.data
+*.data
+
+# Useless stuff
+Single_inference_web.png
+Single_inference_web_1m.png
+test.png
