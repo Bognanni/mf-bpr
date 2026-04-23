@@ -3,8 +3,9 @@ import torch.optim as optim
 import torch.nn.functional as F
 import numpy as np
 import time
+import argparse
 from tqdm import tqdm
-from data import MovieLensData
+from data import MovieLensData, AmazonBeautyData
 from model import BPRModel
 
 # constants used
@@ -22,6 +23,22 @@ def set_seed(seed):
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
 
+# function that returns the args from the command line "python main.py --dataset amazon"
+def parse_args():
+    parser = argparse.ArgumentParser()
+
+    # add the argument to choice the dataset
+    parser.add_argument(
+        '--dataset',
+        type=str,
+        default='movielens1m',
+        choices=['movielens1m', 'amazon']  # only this two options
+    )
+
+    # eventually add others args
+    return parser.parse_args()
+
+# generalized for any dataset
 def sanity_check(data):
     print(f"\n------------------------------------------------")
     print("Sanity check 1: \nCorrect loading of the dataset.")
@@ -32,38 +49,42 @@ def sanity_check(data):
 
     print(f"------------------------------------------------")
     print("Sanity check 2: \nCorrect indexing of the items.")
-    test_movie_ids = [1, 318, 296, 999999]  # 999999 not valid
-    for raw_id in test_movie_ids:
+    real_item_ids = list(data.item_map.keys())[:3]
+    test_item_ids = real_item_ids + ["FAKE_ITEM_999999"]
+
+    for raw_id in test_item_ids:
         if raw_id in data.item_map:
             idx = data.item_map[raw_id]
-            print(f"Raw ID {raw_id:<6} -> Index {idx}")
+            print(f"Raw ID {str(raw_id):<15} -> Index {idx}")
         else:
-            print(f"Raw ID {raw_id:<6} -> Not found.")
+            print(f"Raw ID {str(raw_id):<15} -> Not found.")
 
     print(f"------------------------------------------------")
 
     print(f"------------------------------------------------")
     print("Sanity check 3: \nCorrect indexing of the users.")
-    test_user_ids = [1, 100, 300]
+    real_user_ids = list(data.user_map.keys())[:3]
+    test_user_ids = real_user_ids + ["FAKE_USER_999999"]
+
     for raw_id in test_user_ids:
         if raw_id in data.user_map:
             idx = data.user_map[raw_id]
-            print(f"Raw ID {raw_id:<6} -> Index {idx}")
+            print(f"Raw ID {str(raw_id):<15} -> Index {idx}")
         else:
-            print(f"Raw ID {raw_id:<6} -> Not found.")
+            print(f"Raw ID {str(raw_id):<15} -> Not found.")
     print(f"------------------------------------------------")
 
     print(f"------------------------------------------------")
     print("Sanity check 4: \nHistory of random users.")
-    for raw_id in test_user_ids:
+    for raw_id in real_user_ids:
         if raw_id in data.user_map:
             idx = data.user_map[raw_id]
-            history_len = len(data.user_history.get(idx, []))
-            print(f"User Raw {raw_id:<3} (Idx {idx:<3}), history of {history_len} movies.")
+            history_len = len(data.user_history.get(idx, set()))
+            print(f"User Raw {str(raw_id):<15} (Idx {idx:<5}), history of {history_len} interactions.")
     print(f"------------------------------------------------")
 
 # Hit ratio function
-def calculate_hit_ratio(model, data, device, k=10):
+def calculate_hit_ratio(model, data, device, k=10, batch_size=512):
     model.eval()
     hits = 0
     total_users = len(data.test_df)
@@ -74,28 +95,33 @@ def calculate_hit_ratio(model, data, device, k=10):
     test_pairs = data.test_df[['u_idx', 'i_idx']].values
 
     with torch.no_grad():
-        for u_idx, true_item_idx in tqdm(test_pairs, desc="Evaluating"):
-            u_tensor = torch.tensor([u_idx], dtype=torch.long, device=device)
+        for start_idx in tqdm(range(0, total_users, batch_size), desc="Evaluating"):
+            end_idx = min(start_idx + batch_size, total_users)
+            batch_pairs = test_pairs[start_idx:end_idx]
 
-            all_scores = model(u_tensor)
+            u_batch = torch.tensor(batch_pairs[:, 0], dtype=torch.long, device=device)
+            true_i_batch = torch.tensor(batch_pairs[:, 1], dtype=torch.long, device=device)
 
-            # Save the computed score for the item
-            true_item_score = all_scores[true_item_idx].item()
+            all_scores = model(u_batch)
 
-            # Mask with -inf all the seen items
-            seen_items = data.user_history.get(u_idx, set())
-            seen_items_list = list(seen_items)
-            all_scores[seen_items_list] = -float('inf')
+            for b_idx in range(len(u_batch)):
+                u_idx = u_batch[b_idx].item()
+                true_item_idx = true_i_batch[b_idx].item()
 
-            # The only item not masked is the test item (remember that the user saw it)
-            all_scores[true_item_idx] = true_item_score
+                # Save the computed score for the item
+                true_item_score = all_scores[b_idx, true_item_idx].item()
+
+                # Mask with -inf all the seen items
+                seen_items = data.user_history.get(u_idx, set())
+                seen_items_list = list(seen_items)
+                all_scores[b_idx, seen_items_list] = -float('inf')
+
+                # The only item not masked is the test item (remember that the user saw it)
+                all_scores[b_idx, true_item_idx] = true_item_score
 
             # Check if the test item is in top k
-            _, top_indices = torch.topk(all_scores, k)
-            top_indices = top_indices.cpu().numpy()
-
-            if true_item_idx in top_indices:
-                hits += 1
+            _, top_indices = torch.topk(all_scores, k, dim=1)
+            hits += (top_indices == true_i_batch.unsqueeze(1)).sum().item()
 
     hr = hits / total_users
     return hr
@@ -140,9 +166,19 @@ def main():
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    data = MovieLensData("ml-1m-csv")
-    sanity_check(data)
+    args = parse_args()
 
+    if args.dataset == 'amazon':
+        data = AmazonBeautyData(
+            jsonl_path="All_Beauty.jsonl/All_Beauty.jsonl",
+            meta_jsonl_path="meta_All_Beauty.jsonl/meta_All_Beauty.jsonl"
+        )
+    elif args.dataset == 'movielens1m':
+        data = MovieLensData("ml-1m-csv")
+    else:
+        raise ValueError("Dataset not supported.")
+
+    sanity_check(data)
 
     model = BPRModel(data.num_users, data.num_items, EMBEDDING_DIM).to(device)
 
@@ -201,7 +237,7 @@ def main():
     test_user_idx = 100
 
     all_seen_ids = data.user_history[test_user_idx]
-    all_seen_titles = [data.movie_titles.get(idx, 'Unknown') for idx in all_seen_ids]
+    all_seen_titles = [data.item_titles.get(idx, 'Unknown') for idx in all_seen_ids]
 
     # Alphabetical order
     all_seen_titles.sort()
@@ -240,7 +276,7 @@ def main():
     print(f"------------------------------------------------")
     print(f"Example of recommendations for a random user (idx {test_user_idx})")
     for rank, idx in enumerate(top_k_indices):
-        title = data.movie_titles.get(idx, "Unknown")
+        title = data.item_titles.get(idx, "Unknown")
         score = scores_np[idx]
         print(f"{rank + 1}. {title} (Score: {score:.2f})")
 
@@ -256,10 +292,12 @@ def main():
 
     dummy_input = torch.tensor([0], dtype=torch.long)
 
+    model_name_export = args.dataset + ".onnx"
+
     torch.onnx.export(
         model,
         (dummy_input,),
-        "bpr_model_1m.onnx",
+        model_name_export,
         input_names=['user_id'],
         output_names=['scores'],
         dynamic_axes={
