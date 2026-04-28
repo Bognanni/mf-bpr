@@ -4,17 +4,32 @@ use std::time::Duration;
 use ort::value::Value;
 use std::collections::HashSet;
 use std::time::Instant;
-use mf_bpr::data::MovieLensData;
+use mf_bpr::data::RecSysData;
 use mf_bpr::eval::{calculate_hit_ratio, benchmark_latency};
+use std::env;
 
 fn main() -> Result<()> {
     // Load data
-    let data = MovieLensData::load("ml-1m-csv")?;
+    let args: Vec<String> = env::args().collect();
+    let dataset_type = if args.len() > 1 { args[1].as_str() } else { "movielens" };
+
+    let data = match dataset_type {
+        "amazon" => RecSysData::load_amazon("All_Beauty.jsonl", Some("meta_All_Beauty.jsonl"))?,
+        "movielens" => RecSysData::load_movielens("ml-1m-csv")?,
+        _ => panic!("Dataset '{}' not recognized.", dataset_type),
+    };
     
     // Load the model
+    let model_file = match dataset_type {
+        "amazon" => "amazon.onnx",
+        "movielens" => "bpr_model_1m.onnx",
+        _ => panic!("Dataset '{}' not recognized.", dataset_type),
+    };
+
     let mut model = Session::builder()?
         .with_intra_threads(4)?
-        .commit_from_file("bpr_model_1m.onnx")?;
+        .commit_from_file(model_file)?;
+
 
     // Random user (In {} to use the model later)
     {
@@ -52,7 +67,7 @@ fn main() -> Result<()> {
         let seen_items = data.user_history.get(test_user_internal_idx).unwrap_or(&empty_set);
         
         let mut seen_titles: Vec<&str> = seen_items.iter()
-            .map(|&idx| data.movie_titles.get(&idx).map(|s| s.as_str()).unwrap_or("Unknown"))
+            .map(|&idx| data.item_titles.get(&idx).map(|s| s.as_str()).unwrap_or("Unknown"))
             .collect();
         seen_titles.sort();
 
@@ -74,8 +89,8 @@ fn main() -> Result<()> {
         println!("Example of recommendations for a random user (idx {})", test_user_internal_idx);
 
         for (rank, (idx, score)) in candidates.iter().take(10).enumerate() {
-            let title = data.movie_titles.get(idx).map(|s| s.as_str()).unwrap_or("Unknown");
-            let raw_id = data.idx_to_item_raw.get(idx).unwrap_or(&0);
+            let title = data.item_titles.get(idx).map(|s| s.as_str()).unwrap_or("Unknown");
+            let raw_id = data.idx_to_item_raw.get(idx).map(|s| s.as_str()).unwrap_or("0");
             
             println!("{}. {} (ID: {}, Score: {:.2})", rank + 1, title, raw_id, score);
         }

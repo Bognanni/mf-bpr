@@ -2,15 +2,17 @@ use candle_core::{Device};
 use candle_nn::{Optimizer, VarMap, VarBuilder};
 use anyhow::Result;
 use std::time::{Duration, Instant};
-use mf_bpr::data::MovieLensData;
+use mf_bpr::data::RecSysData;
 use rand::SeedableRng;
 use rand::rngs::SmallRng;
 use mf_bpr::eval::{calculate_hit_ratio, benchmark_latency};
 use mf_bpr::model::{BPRModel, bpr_loss};
+use std::env;
 
+// to run using cmd "cargo run --release -- datasetName"
 
 // Function that returns the recommended items for a user
-fn recommend_for_user(model: &BPRModel, data: &MovieLensData, user_idx: usize,
+fn recommend_for_user(model: &BPRModel, data: &RecSysData, user_idx: usize,
     top_k: usize, device: &candle_core::Device) -> anyhow::Result<(Vec<(usize, f32)>, Duration)> {
     
     // Start the count
@@ -57,7 +59,14 @@ fn main() -> Result<()> {
     let mut rng = SmallRng::seed_from_u64(seed);
 
     // Loading data
-    let data = MovieLensData::load("ml-latest-small")?;
+    let args: Vec<String> = env::args().collect();
+    let dataset_type = if args.len() > 1 { args[1].as_str() } else { "movielens" };
+
+    let data = match dataset_type {
+        "amazon" => RecSysData::load_amazon("All_Beauty.jsonl", Some("meta_All_Beauty.jsonl"))?,
+        "movielens" => RecSysData::load_movielens("ml-1m-csv")?,
+        _ => panic!("Error! Unknown dataset. Use 'amazon' or 'movielens'."),
+    };
 
     // Building the model
     let varmap = VarMap::new();
@@ -134,7 +143,7 @@ fn main() -> Result<()> {
     let history = &data.user_history[test_user_idx];
 
     for (i, item_idx) in history.iter().take(10).enumerate() {
-        let title = data.movie_titles.get(item_idx).map(|s| s.as_str()).unwrap_or("Unknown");
+        let title = data.item_titles.get(item_idx).map(|s| s.as_str()).unwrap_or("Unknown");
         println!("{}. {}", i+1, title);
     }
     println!("------------------------------------------------");
@@ -144,7 +153,7 @@ fn main() -> Result<()> {
 
     println!("Example of recommendations for a random user (idx {})", test_user_idx);
     for (i, (item_idx, score)) in recommendations.iter().enumerate() {
-        let title = data.movie_titles.get(item_idx).map(|s| s.as_str()).unwrap_or("Unknown");
+        let title = data.item_titles.get(item_idx).map(|s| s.as_str()).unwrap_or("Unknown");
         println!("{}. {} (Score: {:.4})", i+1, title, score);
     }
 

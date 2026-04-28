@@ -43,7 +43,7 @@ def sanity_check(data):
     print(f"\n------------------------------------------------")
     print("Sanity check 1: \nCorrect loading of the dataset.")
     print(f"Total users : {data.num_users}")
-    print(f"Total movies: {data.num_items}")
+    print(f"Total items: {data.num_items}")
     print(f"Interactions: {len(data.interactions)}")
     print(f"------------------------------------------------")
 

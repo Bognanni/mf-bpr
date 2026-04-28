@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::time::Instant;
 use ort::{session::Session, value::Value};
 use async_channel::{Sender, Receiver};
-use mf_bpr::data::MovieLensData;
+use mf_bpr::data::RecSysData;
 use mf_bpr::api::{MovieRec, RecommendationResponse};
 use tower_http::cors::CorsLayer;
 
@@ -12,7 +12,7 @@ use tower_http::cors::CorsLayer;
 struct AppState {
     pool_rx: Receiver<Session>,
     pool_tx: Sender<Session>,
-    data: MovieLensData,
+    data: RecSysData,
 }
 
 #[tokio::main]
@@ -20,7 +20,7 @@ async fn main() -> anyhow::Result<()> {
     println!("Starting server");
 
     // Load the dataset
-    let data = MovieLensData::load("ml-1m-csv")?;
+    let data = RecSysData::load_movielens("ml-1m-csv")?;
     
     // Number of parallel sessions = number of core of the cpu
     let num_workers = num_cpus::get();
@@ -66,7 +66,7 @@ async fn handle_recommend(Path(user_id_raw): Path<u32>, State(state): State<Arc<
     let start = Instant::now();
 
     // Search the user idx
-    let internal_idx = match state.data.user_raw_to_idx.get(&user_id_raw) {
+    let internal_idx = match state.data.user_raw_to_idx.get(&user_id_raw.to_string()) {
         Some(&idx) => idx,
         None => return Err((StatusCode::NOT_FOUND, format!("User ID {} not found", user_id_raw))),
     };
@@ -115,7 +115,7 @@ async fn handle_recommend(Path(user_id_raw): Path<u32>, State(state): State<Arc<
 
     let top_k = 10;
     let recs: Vec<MovieRec> = candidates.iter().take(top_k).enumerate().map(|(rank, (idx, score))| {
-        let title = state.data.movie_titles.get(idx).cloned().unwrap_or_else(|| "Unknown".to_string());
+        let title = state.data.item_titles.get(idx).cloned().unwrap_or_else(|| "Unknown".to_string());
         MovieRec {
             rank: rank + 1,
             title,

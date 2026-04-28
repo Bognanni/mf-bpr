@@ -1,10 +1,10 @@
 use std::time::Duration;
 use rand::Rng;
 use anyhow::Result;
-use crate::data::MovieLensData;
+use crate::data::RecSysData;
 
 // Hit ratio function
-pub fn calculate_hit_ratio<F>(data: &MovieLensData, k: usize, mut predict_fn: F) -> Result<f32>
+pub fn calculate_hit_ratio<F>(data: &RecSysData, k: usize, mut predict_fn: F) -> Result<f32>
     where F: FnMut(u32) -> Result<(Vec<f32>, Duration)> {
 
     let mut hits = 0;
@@ -54,7 +54,7 @@ pub fn calculate_hit_ratio<F>(data: &MovieLensData, k: usize, mut predict_fn: F)
 }
 
 // Get avg, p50, p90, p95, p99 inference time
-pub fn benchmark_latency<F>(data: &MovieLensData, num_requests: usize, mut predict_fn: F) -> Result<(f64, f64, f64, f64, f64)>
+pub fn benchmark_latency<F>(data: &RecSysData, num_requests: usize, mut predict_fn: F) -> Result<(f64, f64, f64, f64, f64)>
     where F: FnMut(u32) -> Result<(Vec<f32>, Duration)> {
     
     println!("\nStarting Benchmark on {} requests", num_requests);
